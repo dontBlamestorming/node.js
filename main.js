@@ -1,9 +1,11 @@
-var http = require('http');       // get http moduel
-var fs = require('fs');           // file system moduel
-var url = require('url');         // get url moduel
-var qs = require('querystring');  // get querystring moduel
+var http = require('http');       
+var fs = require('fs');           
+var url = require('url');         
+var qs = require('querystring');    // get module
 
-function templateHTML(title, list, body) {
+function templateHTML(title, list, body, control) {
+  //porpose : to make whole html
+
   return `
   <!doctype html>
   <html>
@@ -14,7 +16,7 @@ function templateHTML(title, list, body) {
   <body>
     <h1><a href="/">WEB</a></h1>
     ${list}
-    <a href="/create">create</a>
+    ${control}
     ${body}
   </body>
   </html>
@@ -22,9 +24,11 @@ function templateHTML(title, list, body) {
 }
 
 function templateList(filelist) {
+  // porpose : automatically add lists 
+  // filelist - processed dir name by 'readdir' method
+
   var list = '<ul>';
   var i = 0;
-
     while(i < filelist.length) {
       list = list + `<li><a href="/?id=${filelist[i]}">${filelist[i]}</a></li>`;
       i++;
@@ -32,33 +36,46 @@ function templateList(filelist) {
 
     list = list + '</ul>';
     return list;
-}
+  }
 
-var app = http.createServer(
+
+var app = http.createServer(                          // 웹페이지를 reload할 때마다 request로  요청정보가 넘어온다. 
   function(request,response){
-    var _url = request.url;
-    // analyze given 'url'
-    var queryData = url.parse(_url, true).query;
-    var pathname = url.parse(_url, true).pathname;
+    var _url = request.url;                           // result : /
+    var queryData = url.parse(_url, true).query;      // result : [Object: null prototype] {} - querysting으로 웹페이지를 구분하는 구분자 역할을 할 것
+    var pathname = url.parse(_url, true).pathname;    // result : /
 
       if(pathname === '/') {
         if(queryData.id === undefined){
-          fs.readdir('./data', function(error, filelist) {
+          // home
+          fs.readdir('./data', function(error, filelist) {    // filelist : [ 'CSS', 'HTML', 'JavaScript', 'MySQL', 'psk is man' ]
             var title = 'Welcome';
             var description = 'Hello, Node.js';
             var list = templateList(filelist);
-            var template = templateHTML(title, list, `<h2>${title}</h2><p>${description}</p>`);
+            var template = templateHTML(title, list,
+               `<h2>${title}</h2><p>${description}</p>`,
+               `<a href="/create">create</a>`
+               );
 
             response.writeHead(200);
             response.end(template);
           });
-          
           } else {       
+            // this page have queryData.id value
             fs.readdir('./data', function(error, filelist) {
               fs.readFile(`./data/${queryData.id}`, 'utf8', function(err, description){
               var title = queryData.id;
               var list = templateList(filelist);
-              var template = templateHTML(title, list, `<h2>${title}</h2><p>${description}</p>`);
+              var template = templateHTML(title, list, 
+                `<h2>${title}</h2><p>${description}</p>`,
+                `<a href="/create">create</a> 
+                <a href="/update?id=${title}">update</a>
+                <form action="delete_process" method="post>
+                  <input type="hidden" name="id" value="${title}"> 
+                  <input type="sumbit" value="delete">
+                </form>
+                `
+                );
 
               response.writeHead(200);
               response.end(template);
@@ -69,24 +86,25 @@ var app = http.createServer(
          fs.readdir('./data', function(error, filelist) {
           var title = 'WEB - create';
           var list = templateList(filelist);
-          var template = templateHTML(title, list, `
-          <form action="http://localhost:3000/create_process" method="post">
-            <p><input type="text" name="title" placeholder="title"></p>
-            <p>
-                <textarea name="description" placeholder="description" id="" cols="30" rows="10"></textarea>
-            </p>
-            <p>
-                <input type="submit">
-            </p>
-          </form>
-          `);
+          var template = templateHTML(title, list,
+             `
+            <form action="/create_process" method="post">
+              <p><input type="text" name="title" placeholder="title"></p>
+              <p>
+                  <textarea name="description" placeholder="description"></textarea>
+              </p>
+              <p>
+                  <input type="submit">
+              </p>
+            </form>
+          `, '');
 
           response.writeHead(200);
           response.end(template);
         });
       } else if(pathname === '/create_process'){
         var body = '';
-        
+
         request.on('data', function(data){
           body = body + data;
         }); 
@@ -99,6 +117,62 @@ var app = http.createServer(
               response.end();
             })
         });
+      } else if(pathname === '/update'){
+          fs.readdir('./data', function(error, filelist) {
+            fs.readFile(`./data/${queryData.id}`, 'utf8', function(err, description){
+            var title = queryData.id;
+            var list = templateList(filelist);
+            var template = templateHTML(title, list, 
+              `
+              <form action="/update_process" method="post">
+              <input type="hidden" name="id" value="${title}">
+              <p><input type="text" name="title" placeholder="title" value="${title}"></p>
+              <p>
+                <textarea name="description" placeholder="description">${description}</textarea>
+              </p>
+              <p>
+                  <input type="submit">
+              </p>
+              </form>
+              `,
+              `<a href="/create">create</a> <a href="/update?id=${title}">update</a>`
+              );
+            response.writeHead(200);
+            response.end(template);
+          });
+        });
+      } else if(pathname === '/update_process'){
+        var body = '';
+
+        request.on('data', function(data){
+          body = body + data;
+        }); 
+        request.on('end', function(){
+          var post = qs.parse(body);
+          var id = post.id;
+          var title = post.title;
+          var description = post.description;
+            fs.rename(`data/${id}`, `data/${title}`, function(error) {
+              fs.writeFile(`data/${title}`, description, 'utf8', function(err){
+                response.writeHead(302, {Location: `/?id=${title}`});
+                response.end();
+              })
+            })
+        });
+      } else if(pathname === '/delete_process'){
+        var body = '';
+
+        request.on('data', function(data){
+          body = body + data;
+        }); 
+        request.on('end', function(){
+          var post = qs.parse(body);
+          var id = post.id;
+            fs.unlink(`data/${id}`, function(error){
+              response.writeHead(302, {Location: `/`});
+              response.end();
+            })
+        });
       } else {
         response.writeHead(404);
         response.end('Not found');
@@ -106,3 +180,4 @@ var app = http.createServer(
 
     });
     app.listen(3000);
+
